@@ -10,12 +10,12 @@ use std::io::Error;
 
 use clap::{Parser, ValueEnum};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
-use downcast_rs::{DowncastSync, impl_downcast};
+use downcast_rs::{impl_downcast, DowncastSync};
 use log::{Level, LevelFilter};
 use pretty_env_logger::env_logger;
 use pretty_env_logger::env_logger::Builder;
 
-#[derive(Clone,Debug, Parser)]
+#[derive(Clone, Debug, Parser)]
 struct Cli {
     #[clap(flatten)]
     verbose: Verbosity,
@@ -32,7 +32,7 @@ enum Command {
 }
 
 trait Runnable {
-    fn run(&self, cli: &Cli, repo: &mut Box<dyn SourceRepository>) -> Result<String, Error>;
+    fn run(&self, cli: &Cli, repo: &mut dyn SourceRepository) -> Result<String, Error>;
 }
 
 impl fmt::Display for Cli {
@@ -58,12 +58,12 @@ impl fmt::Display for Command {
 }
 
 impl Runnable for Command {
-    fn run(&self, args: &Cli, repo: &mut Box<dyn SourceRepository>) -> Result<String, Error> {
-        return match self {
+    fn run(&self, args: &Cli, repo: &mut dyn SourceRepository) -> Result<String, Error> {
+        match self {
             Command::Tag => Self::tag(args, repo),
 
             Command::Check => Self::check(args, repo),
-        };
+        }
     }
 }
 trait SourceRepository: DowncastSync {
@@ -75,7 +75,7 @@ struct GitSourceRepository {}
 
 impl SourceRepository for GitSourceRepository {
     fn get_current_branch(&self) -> String {
-        return String::from("master");
+        String::from("master")
     }
 
     fn push_tag(&mut self, tag: String) {
@@ -84,16 +84,16 @@ impl SourceRepository for GitSourceRepository {
 }
 
 impl Command {
-    fn tag(cli: &Cli, repo: &mut Box<dyn SourceRepository>) -> Result<String, Error> {
+    fn tag(cli: &Cli, repo: &mut dyn SourceRepository) -> Result<String, Error> {
         info!("tag command");
         let branch_name = repo.get_current_branch();
         let tag_name = format!("gitop/{}/{}", branch_name, cli.operation);
         repo.push_tag(tag_name.clone());
-        return Ok(String::from(tag_name));
+        Ok(tag_name)
     }
-    fn check(cli: &Cli, repo: &Box<dyn SourceRepository>) -> Result<String, Error> {
+    fn check(cli: &Cli, repo: &dyn SourceRepository) -> Result<String, Error> {
         info!("check command");
-        return Ok(String::from(""));
+        Ok(String::from(""))
     }
 }
 
@@ -103,21 +103,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Builder::new().filter_level(filter_level).init();
     info!("gitop with args {}", args.clone());
     let mut git_repo = GitSourceRepository {};
-    let mut repo: Box<dyn SourceRepository> = Box::new(git_repo);
-    args.command.run(&args, &mut repo);
+    args.command.run(&args, &mut git_repo);
     Ok(())
 }
 
 #[test]
 fn test_tag_command() {
     // given a fake repo
-    #[derive(Clone,Debug)]
+    #[derive(Clone, Debug)]
     struct FakeRepository {
-       pushed_tag: String,
+        pushed_tag: String,
     }
     impl SourceRepository for FakeRepository {
         fn get_current_branch(&self) -> String {
-            return String::from("master");
+            String::from("master")
         }
 
         fn push_tag(&mut self, tag: String) {
@@ -129,13 +128,13 @@ fn test_tag_command() {
     }
     impl TrackableCall for FakeRepository {
         fn get_last_pushed_tag(&self) -> String {
-            return self.pushed_tag.clone();
+            self.pushed_tag.clone()
         }
     }
 
-    let mut fake_repo = FakeRepository {pushed_tag: String::from("no")};
-    let mut repo: Box<dyn SourceRepository> = Box::new(fake_repo);
-
+    let mut fake_repo = FakeRepository {
+        pushed_tag: String::from("no"),
+    };
     // and a tag command
     let cli = Cli {
         verbose: Verbosity::new(0, 0),
@@ -146,8 +145,8 @@ fn test_tag_command() {
     };
 
     // when tag using defined arguments
-    Command::tag(&cli, &mut repo);
+    Command::tag(&cli, &mut fake_repo);
     // then a new tag with op name and branch name is pushed
-    let last_pushed_tag = repo.downcast_ref::<FakeRepository>().unwrap().get_last_pushed_tag();
+    let last_pushed_tag = fake_repo.get_last_pushed_tag();
     assert_eq!(&last_pushed_tag, "gitop/master/test")
 }
